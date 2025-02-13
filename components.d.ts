@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    FlvPlayer: typeof import('./src/components/FlvPlayer.vue')['default']
     LiveStream: typeof import('./src/components/LiveStream.vue')['default']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']

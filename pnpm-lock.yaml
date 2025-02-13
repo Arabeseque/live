@@ -18,6 +18,9 @@ importers:
       axios:
         specifier: ^1.7.9
         version: 1.7.9
+      flv.js:
+        specifier: ^1.6.2
+        version: 1.6.2
       naive-ui:
         specifier: ^2.41.0
         version: 2.41.0(vue@3.5.13(typescript@5.7.3))
@@ -1705,6 +1708,9 @@ packages:
   es-module-lexer@1.5.4:
     resolution: {integrity: sha512-MVNK56NiMrOwitFB7cqDwq0CQutbw+0BvLshJSse0MUNU+y1FC3bUS/AQg7oUng+/wKrrki7JfmwtVHkVfPLlw==}
 
+  es6-promise@4.2.8:
+    resolution: {integrity: sha512-HJDGx5daxeIvxdBxvG2cb9g4tEvwIk3i8+nhX0yGrYmZUzbkdg8QbDevheDB8gd0//uPj4c1EQua8Q+MViT0/w==}
+
   esbuild@0.23.1:
     resolution: {integrity: sha512-VVNz/9Sa0bs5SELtn3f7qhJCDPCF5oMEl5cO9/SSinpE9hbPVvxbd572HH5AKiP7WD8INO53GgfDDhRjkylHEg==}
     engines: {node: '>=18'}
@@ -2001,6 +2007,9 @@ packages:
 
   flatted@3.2.9:
     resolution: {integrity: sha512-36yxDn5H7OFZQla0/jFJmbIKTdZAQHngCedGxiMmpNfEZM0sdEeT+WczLQrjK6D7o2aiyLYDnkw0R3JK0Qv1RQ==}
+
+  flv.js@1.6.2:
+    resolution: {integrity: sha512-xre4gUbX1MPtgQRKj2pxJENp/RnaHaxYvy3YToVVCrSmAWUu85b9mug6pTXF6zakUjNP2lFWZ1rkSX7gxhB/2A==}
 
   follow-redirects@1.15.9:
     resolution: {integrity: sha512-gew4GsXizNgdoRyqmyfMHyAmXsZDk6mHkSxZFCzW9gwlbtOW44CDtYavM+y+72qD/Vq2l550kMF52DT8fOLJqQ==}
@@ -3304,6 +3313,9 @@ packages:
 
   webpack-virtual-modules@0.6.2:
     resolution: {integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==}
+
+  webworkify-webpack@2.1.5:
+    resolution: {integrity: sha512-2akF8FIyUvbiBBdD+RoHpoTbHMQF2HwjcxfDvgztAX5YwbZNyrtfUMgvfgFVsgDhDPVTlkbb5vyasqDHfIDPQw==}
 
   whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
@@ -5044,6 +5056,8 @@ snapshots:
 
   es-module-lexer@1.5.4: {}
 
+  es6-promise@4.2.8: {}
+
   esbuild@0.23.1:
     optionalDependencies:
       '@esbuild/aix-ppc64': 0.23.1
@@ -5485,6 +5499,11 @@ snapshots:
       keyv: 4.5.4
 
   flatted@3.2.9: {}
+
+  flv.js@1.6.2:
+    dependencies:
+      es6-promise: 4.2.8
+      webworkify-webpack: 2.1.5
 
   follow-redirects@1.15.9: {}
 
@@ -7035,6 +7054,8 @@ snapshots:
   webidl-conversions@7.0.0: {}
 
   webpack-virtual-modules@0.6.2: {}
+
+  webworkify-webpack@2.1.5: {}
 
   whatwg-encoding@3.1.1:
     dependencies:
