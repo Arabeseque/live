@@ -26,12 +26,6 @@ function go() {
 
     <div py-4 />
 
-    <TheInput
-      v-model="name"
-      placeholder="What's your name?"
-      autocomplete="false"
-      @keydown.enter="go"
-    />
 
     <div>
       <button

@@ -67,7 +67,7 @@ export function sendVerificationCode(params: SendVerificationCodeParams): Promis
  * 获取当前用户信息
  */
 export function getCurrentUser(): Promise<UserInfo> {
-  return get('/api/auth/current');
+  return get('/api/auth/current-user');
 }
 
 export default {

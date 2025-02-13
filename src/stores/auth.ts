@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { UserInfo } from '@/services/auth';
 import { TokenUtils } from '@/utils/token';
 import * as authService from '@/services/auth';
+import { debug } from 'node:console';
 
 export const useAuthStore = defineStore('auth', () => {
   // 用户信息
@@ -24,8 +25,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 使用用户名密码登录
   async function login(username: string, password: string) {
-    const response = await authService.login({ username, password });
-    handleLoginSuccess(response);
+    const response = await authService.login({ username, password }) as any;
+    handleLoginSuccess(response.data);
     return response;
   }
 
@@ -38,6 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 处理登录成功
   function handleLoginSuccess(response: authService.LoginResponse) {
+    console.log('登录成功:', response.token);
     TokenUtils.setToken(response.token);
     userInfo.value = response.user;
     isLoggedIn.value = true;

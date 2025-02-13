@@ -3,7 +3,7 @@ import { TokenUtils } from './token';
 
 // 创建axios实例
 const request = axios.create({
-  baseURL: 'http://localhost:3000', // 从接口文档中获取的baseURL
+  baseURL: 'http://localhost:8088', // 从接口文档中获取的baseURL
   timeout: 10000, // 请求超时时间
 });
 
