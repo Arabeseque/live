@@ -23,6 +23,15 @@ const routes = [
     component: () => import('@/pages/403.vue'),
     meta: { requiresAuth: false },
   },
+  {
+    path: '/stream',
+    component: () => import('@/pages/stream.vue'),
+    meta: {
+      requiresAuth: true,
+      // 开播模式需要 streamer 权限，观看模式不需要
+      allowedRoles: (to: any) => !to.query.id ? ['streamer', 'admin'] : undefined,
+    },
+  },
   // {
   //   // 管理后台路由示例
   //   path: '/admin',
