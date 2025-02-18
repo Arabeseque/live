@@ -1,335 +1,304 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useLiveStore } from '../stores/live'
+
+const router = useRouter()
+const liveStore = useLiveStore()
+const showCreateDialog = ref(false)
+const newRoomTitle = ref('')
+
+onMounted(() => {
+  liveStore.fetchRooms()
+})
+
+async function createRoom() {
+  if (!newRoomTitle.value) return
+  try {
+    const room = await liveStore.createRoom(newRoomTitle.value)
+    showCreateDialog.value = false
+    newRoomTitle.value = ''
+    // 跳转到直播间
+    router.push(`/live/${room.id}`)
+  } catch (err) {
+    console.error('创建直播间失败:', err)
+  }
+}
+
+function goToRoom(roomId: string) {
+  router.push(`/live/${roomId}`)
+}
+</script>
+
 <template>
   <div class="stream-page">
-    <div class="container">
-      <h1>{{ isStreamer ? '我的直播间' : streamTitle }}</h1>
+    <div class="header">
+      <h1>直播列表</h1>
+      <button class="create-btn" @click="showCreateDialog = true">
+        创建直播间
+      </button>
+    </div>
 
-      <!-- 推流组件 - 仅在主播模式显示 -->
-      <div v-if="isStreamer" class="stream-container">
-        <LiveStream
-          v-if="roomId"
-          :signaling-url="signalingUrl"
-          :streamhttp-url="streamHttpUrl"
-          :srs-url="srsUrl"
-          :room-id="roomId"
-          :user-id="userId"
-          :stream-name="streamName"
-        />
-        <div v-else class="loading">正在创建直播间...</div>
-
-        <!-- 推流配置信息 -->
-        <div class="stream-config">
-          <h3>OBS推流配置</h3>
-          <div class="config-item">
-            <div class="label">推流地址：</div>
-            <div class="value">
-              <span>{{ rtmpUrl }}</span>
-              <button class="copy-btn" @click="copyToClipboard(rtmpUrl)">复制</button>
-            </div>
-          </div>
-          <div class="config-item">
-            <div class="label">串流密钥：</div>
-            <div class="value">
-              <span>{{ roomId }}</span>
-              <button class="copy-btn" @click="copyToClipboard(roomId)">复制</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 播放组件 - 仅在观众模式显示 -->
-      <div v-else-if="playUrl" class="player-container">
-        <FlvPlayer
-          :url="playUrl"
-          :is-live="true"
-        />
-
-        <!-- 直播信息 -->
-        <div class="stream-info" v-if="currentRoom">
-          <div class="info-header">
-            <h2>{{ currentRoom.title }}</h2>
-            <span class="viewers">
-              <i class="i-carbon-user-filled" />
-              {{ formatViewers(currentRoom.viewers) }} 观看
+    <div v-if="liveStore.loading" class="loading">
+      加载中...
+    </div>
+    <div v-else-if="liveStore.error" class="error">
+      {{ liveStore.error }}
+    </div>
+    <div v-else-if="liveStore.rooms.length === 0" class="empty">
+      暂无直播
+    </div>
+    <div v-else class="room-list">
+      <div
+        v-for="room in liveStore.rooms"
+        :key="room.id"
+        class="room-card"
+        @click="goToRoom(room.id)"
+      >
+        <div class="room-info">
+          <h2>{{ room.title }}</h2>
+          <div class="room-status">
+            <span :class="['status-badge', room.status]">
+              {{ room.status === 'living' ? '直播中' : '未开播' }}
             </span>
-          </div>
-          <div class="streamer-info">
-            <span class="streamer-name">主播：{{ currentRoom.streamerName }}</span>
-            <span class="stream-duration">
-              <i class="i-carbon-time" />
-              {{ formatDuration(Date.now() - currentRoom.startTime) }}
+            <span class="viewer-count">
+              <i class="i-carbon-user-multiple" />
+              {{ room.viewerCount }}
             </span>
           </div>
         </div>
+        <div class="room-time">
+          <div v-if="room.startTime" class="time-item">
+            <span class="label">开始时间：</span>
+            <span>{{ room.startTime }}</span>
+          </div>
+          <div v-if="room.endTime" class="time-item">
+            <span class="label">结束时间：</span>
+            <span>{{ room.endTime }}</span>
+          </div>
+        </div>
       </div>
+    </div>
 
-      <!-- 错误提示 -->
-      <div v-if="error" class="error-message">
-        {{ error }}
+    <!-- 创建直播间对话框 -->
+    <div v-if="showCreateDialog" class="dialog-overlay" @click="showCreateDialog = false">
+      <div class="dialog" @click.stop>
+        <h2>创建直播间</h2>
+        <div class="form-group">
+          <label for="title">直播间标题</label>
+          <input
+            id="title"
+            v-model="newRoomTitle"
+            type="text"
+            placeholder="请输入直播间标题"
+            @keyup.enter="createRoom"
+          >
+        </div>
+        <div class="dialog-footer">
+          <button class="cancel-btn" @click="showCreateDialog = false">
+            取消
+          </button>
+          <button class="confirm-btn" @click="createRoom">
+            创建
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { storeToRefs } from 'pinia'
-import { useLiveStore } from '@/stores/live'
-import LiveStream from '@/components/LiveStream.vue'
-import FlvPlayer from '@/components/FlvPlayer.vue'
-import { useAuthStore } from '@/stores/auth'
-import { TokenUtils } from '@/utils/token'
-
-const route = useRoute()
-const router = useRouter()
-const liveStore = useLiveStore()
-const authStore = useAuthStore()
-const { currentRoom, error: storeError } = storeToRefs(liveStore)
-
-// 基础配置
-const signalingUrl = import.meta.env.VITE_SIGNALING_URL || 'ws://localhost:8088/ws'
-const srsUrl = import.meta.env.VITE_SRS_URL || 'http://localhost:8080'
-const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8088'
-const streamHttpUrl = import.meta.env.VITE_STREAM_HTTP_URL || 'http://localhost:8080'
-const rtmpUrl = import.meta.env.VITE_SRS_RTMP_URL || 'rtmp://localhost:1935/live'
-const userId = ref(authStore.userInfo?.id || '')
-const roomId = ref(route.query.id?.toString() || '')
-const streamName = computed(() => `stream-${roomId.value}`)
-
-// 页面状态
-const error = ref<string | null>(null)
-const isCreatingRoom = ref(false)
-
-// 计算属性
-const isStreamer = computed(() => !route.query.id) // 无 id 参数时为主播模式
-const playUrl = computed(() => {
-  if (roomId.value) {
-    return `${srsUrl}/live/${streamName.value}.flv`
-  }
-  return ''
-})
-const streamTitle = computed(() => currentRoom.value?.title || '直播间')
-
-// 复制到剪贴板
-const copyToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch (err) {
-    console.error('复制失败:', err)
-  }
-}
-
-// 格式化观看人数
-const formatViewers = (num: number) => {
-  if (num >= 10000) {
-    return (num / 10000).toFixed(1) + '万'
-  }
-  return num.toString()
-}
-
-// 格式化直播时长
-const formatDuration = (ms: number) => {
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-
-  if (hours > 0) {
-    return `${hours}小时${minutes % 60}分钟`
-  }
-  if (minutes > 0) {
-    return `${minutes}分钟`
-  }
-  return '刚刚开播'
-}
-
-// 创建直播间
-async function createRoom() {
-  try {
-    isCreatingRoom.value = true
-    error.value = null
-
-    const response = await fetch(`${apiBaseUrl}/api/rooms`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TokenUtils.getToken()}`
-      },
-      body: JSON.stringify({
-        title: '我的直播间'
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error('创建直播间失败')
-    }
-
-    const {data} = await response.json()
-    if (data.success) {
-      roomId.value = data.data._id
-      // 更新URL，但不触发路由变化
-      window.history.replaceState(
-        null,
-        '',
-        `${route.path}?id=${roomId.value}`
-      )
-    } else {
-      throw new Error(data.message || '创建直播间失败')
-    }
-  } catch (err: any) {
-    error.value = err.message
-    console.error('创建直播间失败:', err)
-  } finally {
-    isCreatingRoom.value = false
-  }
-}
-
-// 监听错误状态
-if (storeError.value) {
-  error.value = storeError.value
-}
-
-onMounted(async () => {
-  try {
-    // 连接 WebSocket（如果还未连接）
-    await liveStore.connect()
-
-    // 如果是主播模式且没有roomId，创建新的直播间
-    if (isStreamer.value && !roomId.value) {
-      await createRoom()
-    }
-    // 如果是观众模式且找不到直播间，跳转回首页
-    else if (!isStreamer.value && !currentRoom.value) {
-      error.value = '直播间不存在或已结束'
-      setTimeout(() => {
-        router.push('/')
-      }, 2000)
-    }
-  } catch (err: any) {
-    error.value = err.message
-  }
-})
-</script>
-
 <style scoped>
 .stream-page {
-  padding: 20px;
-  min-height: 100vh;
-  background-color: #f5f5f5;
-}
-
-.container {
   max-width: 1200px;
   margin: 0 auto;
-}
-
-h1 {
-  text-align: center;
-  margin-bottom: 32px;
-  color: #2c3e50;
-}
-
-.stream-container,
-.player-container {
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.loading {
   padding: 20px;
-  text-align: center;
-  color: #666;
 }
 
-.stream-info {
-  padding: 16px;
-}
-
-.stream-config {
-  padding: 20px;
-  background-color: #f8f9fa;
-  border-top: 1px solid #e9ecef;
-}
-
-.stream-config h3 {
-  margin: 0 0 16px 0;
-  color: #2c3e50;
-}
-
-.config-item {
+.header {
   display: flex;
-  margin-bottom: 12px;
+  justify-content: space-between;
   align-items: center;
+  margin-bottom: 24px;
 }
 
-.config-item .label {
-  width: 100px;
-  color: #666;
-}
-
-.config-item .value {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.copy-btn {
-  padding: 4px 12px;
-  background-color: #007bff;
+.create-btn {
+  padding: 8px 16px;
+  background-color: #4cd137;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
+  transition: background-color 0.2s;
 }
 
-.copy-btn:hover {
-  background-color: #0056b3;
+.create-btn:hover {
+  background-color: #44bd32;
 }
 
-.info-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.room-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.room-card {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.room-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.room-info {
   margin-bottom: 12px;
 }
 
-.info-header h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #2c3e50;
+.room-info h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
 }
 
-.viewers {
+.room-status {
   display: flex;
   align-items: center;
-  gap: 4px;
-  color: #666;
+  gap: 12px;
 }
 
-.streamer-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: #666;
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
   font-size: 14px;
 }
 
-.stream-duration {
+.status-badge.living {
+  background-color: #ff4757;
+  color: white;
+}
+
+.status-badge.idle,
+.status-badge.ended {
+  background-color: #a4b0be;
+  color: white;
+}
+
+.viewer-count {
   display: flex;
   align-items: center;
   gap: 4px;
+  color: #747d8c;
 }
 
-.error-message {
-  text-align: center;
-  color: #dc3545;
-  margin-top: 16px;
-  padding: 12px;
-  background-color: #fff;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.1);
+.room-time {
+  font-size: 14px;
+  color: #747d8c;
 }
-</style>
+
+.time-item {
+  margin-bottom: 4px;
+}
+
+.time-item .label {
+  color: #a4b0be;
+  margin-right: 8px;
+}
+
+.loading,
+.error,
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: #747d8c;
+}
+
+.error {
+  color: #ff4757;
+}
+
+/* 对话框样式 */
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dialog {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.dialog h2 {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #2f3542;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dfe4ea;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #4cd137;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.dialog-footer button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.cancel-btn {
+  background-color: #f1f2f6;
+  color: #2f3542;
+}
+
+.cancel-btn:hover {
+  background-color: #dfe4ea;
+}
+
+.confirm-btn {
+  background-color: #4cd137;
+  color: white;
+}
+
+.confirm-btn:hover {
+  background-color: #44bd32;
+}
+</style> 

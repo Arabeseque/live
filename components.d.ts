@@ -9,6 +9,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AppHeader: typeof import('./src/components/AppHeader.vue')['default']
     FlvPlayer: typeof import('./src/components/FlvPlayer.vue')['default']
+    LivePlayer: typeof import('./src/components/LivePlayer.vue')['default']
     LiveStream: typeof import('./src/components/LiveStream.vue')['default']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']

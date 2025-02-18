@@ -12,7 +12,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!userInfo.value);
 
   // 获取token 查看 localStorage
-  const getToken = () => {  
+  const getToken = () => {
     if (token.value) {
       console.log('获取token:', token.value);
       return token.value;
@@ -29,8 +29,9 @@ export const useAuthStore = defineStore('auth', () => {
   // 设置token
   const setToken = (newToken: string) => {
     token.value = newToken;
-    console.log('设置token:', newToken);  
+    console.log('设置token:', newToken);
     localStorage.setItem('auth_token', newToken);
+    console.log(getToken());
   };
 
   // 清除token
@@ -55,7 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
   // 使用用户名密码登录
   async function login(username: string, password: string) {
     const response = await authService.login({ username, password }) as any;
-    handleLoginSuccess(response.data);
+    handleLoginSuccess(response);
     return response;
   }
 
@@ -68,7 +69,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 处理登录成功
   function handleLoginSuccess(response: authService.LoginResponse) {
-    console.log('登录成功:', response.token);
     setToken(response.token);
     userInfo.value = response.user;
   }
