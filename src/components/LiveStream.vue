@@ -1,224 +1,231 @@
 <template>
   <div class="live-stream">
     <!-- 视频预览 -->
-    <video
-      ref="videoRef"
-      class="video-preview"
-      :class="{ 'is-preview': !isStreaming }"
-      autoplay
-      playsinline
-      muted
-    />
+    <video ref="videoRef" class="preview" autoplay muted playsinline></video>
 
     <!-- 控制按钮 -->
     <div class="controls">
       <button
         class="control-btn"
-        :class="{ 'is-streaming': isStreaming }"
+        :class="{ 'active': isLive }"
         @click="toggleStream"
       >
-        {{ isStreaming ? '停止直播' : '开始直播' }}
+        {{ isLive ? '结束直播' : '开始直播' }}
       </button>
-
       <button
         class="control-btn"
         @click="toggleCamera"
-        :disabled="isStreaming"
       >
-        切换摄像头
+        {{ isCameraOn ? '关闭摄像头' : '开启摄像头' }}
       </button>
-
       <button
         class="control-btn"
-        @click="toggleMute"
-        :class="{ 'is-muted': isMuted }"
+        @click="toggleMicrophone"
       >
-        {{ isMuted ? '取消静音' : '静音' }}
+        {{ isMicrophoneOn ? '关闭麦克风' : '开启麦克风' }}
       </button>
     </div>
 
     <!-- 状态信息 -->
-    <div class="status" :class="{ 'has-error': error }">
-      {{ status }}
+    <div class="status-info">
+      <div v-if="isLive" class="live-status">
+        <span class="dot"></span> 直播中
+      </div>
+      <div v-if="error" class="error-message">
+        {{ error }}
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { WebRTCService } from '@/services/webrtc'
-import { SignalingService } from '@/services/signaling'
-import { SRSService } from '@/services/srs'
+import { useLiveStore } from '@/stores/live'
 
-// Props
-interface Props {
+const props = defineProps<{
   signalingUrl: string
+  streamHttpUrl: string
   srsUrl: string
   roomId: string
   userId: string
   streamName: string
-}
+}>()
 
-const props = defineProps<Props>()
-
-// 组件状态
+// 状态变量
 const videoRef = ref<HTMLVideoElement | null>(null)
-const isStreaming = ref(false)
-const isMuted = ref(false)
-const status = ref('准备就绪')
-const error = ref<string | null>(null)
+const isLive = ref(false)
+const isCameraOn = ref(true)
+const isMicrophoneOn = ref(true)
+const error = ref('')
+const mediaStream = ref<MediaStream | null>(null)
+const peerConnection = ref<RTCPeerConnection | null>(null)
 
-// 服务实例
-const webrtc = new WebRTCService()
-const signaling = new SignalingService({
-  url: props.signalingUrl,
-  roomId: props.roomId,
-  userId: props.userId
-})
-const srs = new SRSService({
-  url: props.srsUrl,
-  streamName: props.streamName,
-  mode: 'rtc'
-})
+// WebSocket连接
+let ws: WebSocket | null = null
 
-// 初始化摄像头
-async function initCamera() {
+// 初始化WebRTC
+async function initWebRTC() {
   try {
-    status.value = '正在初始化摄像头...'
-    const stream = await webrtc.initMediaStream()
+    // 创建RTCPeerConnection
+    peerConnection.value = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' }
+      ]
+    })
 
+    // 获取媒体流
+    mediaStream.value = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true
+    })
+
+    // 显示预览
     if (videoRef.value) {
-      videoRef.value.srcObject = stream
+      videoRef.value.srcObject = mediaStream.value
     }
 
-    status.value = '摄像头已就绪'
-    error.value = null
+    // 添加轨道到PeerConnection
+    mediaStream.value.getTracks().forEach(track => {
+      if (peerConnection.value && mediaStream.value) {
+        peerConnection.value.addTrack(track, mediaStream.value)
+      }
+    })
+
+    // 监听ICE候选
+    peerConnection.value.onicecandidate = (event) => {
+      if (event.candidate) {
+        ws?.send(JSON.stringify({
+          type: 'candidate',
+          candidate: event.candidate,
+          roomId: props.roomId
+        }))
+      }
+    }
+
+    // 连接状态变化
+    peerConnection.value.onconnectionstatechange = () => {
+      if (peerConnection.value?.connectionState === 'connected') {
+        console.log('WebRTC连接成功')
+      }
+    }
+
   } catch (err: any) {
-    error.value = err.message
-    status.value = '摄像头初始化失败'
+    error.value = '初始化WebRTC失败: ' + err.message
+    console.error('初始化WebRTC失败:', err)
   }
 }
 
 // 开始直播
 async function startStream() {
   try {
-    status.value = '正在连接...'
-
-    // 初始化WebRTC连接
-    const peerConnection = webrtc.initPeerConnection()
-
-    // 连接信令服务器
-    await signaling.connect()
-
-    // 监听信令消息
-    signaling.addMessageHandler(async (message) => {
-      switch (message.type) {
-        case 'answer':
-          await webrtc.setRemoteDescription(message.payload)
-          break
-        case 'candidate':
-          await webrtc.addIceCandidate(message.payload)
-          break
-      }
-    })
-
-    // 创建并发送offer
-    const offer = await webrtc.createOffer()
-    signaling.sendOffer(offer)
-
-    // 初始化SRS连接并推流
-    const mediaStream = webrtc.getMediaStream()
-    if (mediaStream) {
-      await srs.initConnection(mediaStream)
-      await srs.publish()
+    if (!peerConnection.value) {
+      await initWebRTC()
     }
 
-    isStreaming.value = true
-    status.value = '直播中...'
-    error.value = null
+    // 创建offer
+    const offer = await peerConnection.value?.createOffer({
+      offerToReceiveAudio: false,
+      offerToReceiveVideo: false
+    })
+
+    if (!offer) throw new Error('创建offer失败')
+
+    // 设置本地描述
+    await peerConnection.value?.setLocalDescription(offer)
+
+    // 发送offer到信令服务器
+    ws?.send(JSON.stringify({
+      type: 'offer',
+      offer,
+      roomId: props.roomId
+    }))
+
+    isLive.value = true
+
   } catch (err: any) {
-    error.value = err.message
-    status.value = '连接失败'
-    stopStream()
+    error.value = '开始直播失败: ' + err.message
+    console.error('开始直播失败:', err)
   }
 }
 
-// 停止直播
-function stopStream() {
-  webrtc.close()
-  signaling.close()
-  srs.close()
-  isStreaming.value = false
-  status.value = '直播已结束'
+// 结束直播
+async function stopStream() {
+  try {
+    // 关闭WebRTC连接
+    peerConnection.value?.close()
+    peerConnection.value = null
+
+    // 停止所有媒体轨道
+    mediaStream.value?.getTracks().forEach(track => track.stop())
+    mediaStream.value = null
+
+    // 清除视频预览
+    if (videoRef.value) {
+      videoRef.value.srcObject = null
+    }
+
+    isLive.value = false
+
+    // 通知服务器直播结束
+    ws?.send(JSON.stringify({
+      type: 'end',
+      roomId: props.roomId
+    }))
+
+  } catch (err: any) {
+    error.value = '结束直播失败: ' + err.message
+    console.error('结束直播失败:', err)
+  }
 }
 
 // 切换直播状态
-function toggleStream() {
-  if (isStreaming.value) {
-    stopStream()
+async function toggleStream() {
+  if (isLive.value) {
+    await stopStream()
   } else {
-    startStream()
+    await startStream()
   }
 }
 
 // 切换摄像头
-async function toggleCamera() {
-  try {
-    status.value = '切换摄像头中...'
-    // 获取当前使用的视频轨道
-    const mediaStream = webrtc.getMediaStream()
-    const videoTrack = mediaStream?.getVideoTracks()[0]
+function toggleCamera() {
+  if (mediaStream.value) {
+    const videoTrack = mediaStream.value.getVideoTracks()[0]
     if (videoTrack) {
-      // 获取所有视频输入设备
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      const videoDevices = devices.filter(device => device.kind === 'videoinput')
-
-      // 获取当前设备的ID
-      const currentDeviceId = videoTrack.getSettings().deviceId
-
-      // 找到下一个可用的摄像头
-      const nextDevice = videoDevices.find(device => device.deviceId !== currentDeviceId)
-
-      if (nextDevice) {
-        // 使用新的摄像头重新获取媒体流
-        const newStream = await webrtc.initMediaStream({
-          video: { deviceId: { exact: nextDevice.deviceId } },
-          audio: true
-        })
-
-        if (videoRef.value) {
-          videoRef.value.srcObject = newStream
-        }
-
-        status.value = '摄像头已切换'
-        error.value = null
-      }
+      videoTrack.enabled = !videoTrack.enabled
+      isCameraOn.value = videoTrack.enabled
     }
-  } catch (err: any) {
-    error.value = err.message
-    status.value = '切换摄像头失败'
   }
 }
 
-// 切换静音状态
-function toggleMute() {
-  const mediaStream = webrtc.getMediaStream()
-  if (mediaStream) {
-    const audioTracks = mediaStream.getAudioTracks()
-    audioTracks.forEach(track => {
-      track.enabled = !track.enabled
-    })
-    isMuted.value = !isMuted.value
+// 切换麦克风
+function toggleMicrophone() {
+  if (mediaStream.value) {
+    const audioTrack = mediaStream.value.getAudioTracks()[0]
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled
+      isMicrophoneOn.value = audioTrack.enabled
+    }
   }
 }
 
-// 生命周期钩子
-onMounted(() => {
-  initCamera()
+// 组件挂载
+onMounted(async () => {
+  await initWebRTC()
 })
 
+// 组件卸载
 onUnmounted(() => {
-  stopStream()
+  // 停止直播
+  if (isLive.value) {
+    stopStream()
+  }
+
+  // 关闭WebSocket连接
+  if (ws) {
+    ws.close()
+    ws = null
+  }
 })
 </script>
 
@@ -226,66 +233,81 @@ onUnmounted(() => {
 .live-stream {
   position: relative;
   width: 100%;
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
-.video-preview {
+.preview {
   width: 100%;
-  aspect-ratio: 16/9;
-  background-color: #000;
-  border-radius: 8px;
-}
-
-.video-preview.is-preview {
-  border: 2px solid #42b883;
+  height: 600px;
+  background: #000;
+  object-fit: cover;
 }
 
 .controls {
-  margin-top: 16px;
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  gap: 12px;
-  justify-content: center;
+  gap: 16px;
+  z-index: 10;
 }
 
 .control-btn {
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
-  background-color: #42b883;
+  background: rgba(0, 0, 0, 0.6);
   color: white;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.3s;
 }
 
 .control-btn:hover {
-  background-color: #3aa876;
+  background: rgba(0, 0, 0, 0.8);
 }
 
-.control-btn:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
+.control-btn.active {
+  background: #dc3545;
 }
 
-.control-btn.is-streaming {
-  background-color: #dc3545;
+.status-info {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
 }
 
-.control-btn.is-streaming:hover {
-  background-color: #c82333;
+.live-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  background: rgba(220, 53, 69, 0.8);
+  padding: 4px 12px;
+  border-radius: 4px;
 }
 
-.control-btn.is-muted {
-  background-color: #6c757d;
+.dot {
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 50%;
+  animation: blink 1s infinite;
 }
 
-.status {
-  margin-top: 12px;
-  text-align: center;
-  color: #666;
+.error-message {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(220, 53, 69, 0.8);
+  color: white;
+  border-radius: 4px;
 }
 
-.status.has-error {
-  color: #dc3545;
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
 }
 </style>

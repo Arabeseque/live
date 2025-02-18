@@ -1,20 +1,49 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import type { UserInfo } from '@/services/auth';
-import { TokenUtils } from '@/utils/token';
 import * as authService from '@/services/auth';
-import { debug } from 'node:console';
 
 export const useAuthStore = defineStore('auth', () => {
   // 用户信息
   const userInfo = ref<UserInfo | null>(null);
-  // 登录状态
-  const isLoggedIn = ref(TokenUtils.hasToken());
+  const token = ref<string | null>(null);
+
+  // 计算属性
+  const isLoggedIn = computed(() => !!userInfo.value);
+
+  // 获取token 查看 localStorage
+  const getToken = () => {  
+    if (token.value) {
+      console.log('获取token:', token.value);
+      return token.value;
+    }
+    const savedToken = localStorage.getItem('auth_token');
+    console.log('获取token:', savedToken);
+
+    if (savedToken) {
+      console.log('获取token:', savedToken);
+      token.value = savedToken;
+    }
+  }
+
+  // 设置token
+  const setToken = (newToken: string) => {
+    token.value = newToken;
+    console.log('设置token:', newToken);  
+    localStorage.setItem('auth_token', newToken);
+  };
+
+  // 清除token
+  const clearToken = () => {
+    token.value = null;
+    localStorage.removeItem('token');
+  };
 
   // 获取当前用户信息
   async function fetchUserInfo() {
     try {
       const user = await authService.getCurrentUser();
+      console.log('获取用户信息:', user);
       userInfo.value = user;
       return user;
     } catch (error) {
@@ -40,32 +69,35 @@ export const useAuthStore = defineStore('auth', () => {
   // 处理登录成功
   function handleLoginSuccess(response: authService.LoginResponse) {
     console.log('登录成功:', response.token);
-    TokenUtils.setToken(response.token);
+    setToken(response.token);
     userInfo.value = response.user;
-    isLoggedIn.value = true;
   }
 
   // 退出登录
   function logout() {
-    TokenUtils.removeToken();
     userInfo.value = null;
-    isLoggedIn.value = false;
+    clearToken();
   }
 
-  // 初始化：如果有token则获取用户信息
-  async function initialize() {
-    if (TokenUtils.hasToken()) {
-      await fetchUserInfo();
+  // 初始化
+  const initialize = async () => {
+    // 从localStorage恢复token
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      token.value = savedToken;
     }
-  }
+  };
 
   return {
     userInfo,
     isLoggedIn,
+    getToken,
+    setToken,
+    clearToken,
+    initialize,
     login,
-    register,
     logout,
     fetchUserInfo,
-    initialize,
+    register,
   };
 });

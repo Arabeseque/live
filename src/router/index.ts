@@ -29,7 +29,7 @@ const routes = [
     meta: {
       requiresAuth: true,
       // 开播模式需要 streamer 权限，观看模式不需要
-      allowedRoles: (to: any) => !to.query.id ? ['streamer', 'admin'] : undefined,
+      // allowedRoles: (to: any) => !to.query.id ? ['streamer', 'admin'] : undefined,
     },
   },
   // {

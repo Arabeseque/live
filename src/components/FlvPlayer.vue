@@ -1,129 +1,129 @@
 <template>
-  <div class="flv-player" ref="playerContainerRef">
-    <!-- 视频播放器 -->
+  <div class="flv-player">
     <video
       ref="videoRef"
       class="video-element"
+      controls
       autoplay
-      muted
-      playsinline
-    />
+      :muted="muted"
+    ></video>
 
-    <!-- 播放器控件 -->
-    <div class="player-controls" v-show="isControlsVisible">
-      <!-- 底部控制栏 -->
-      <div class="control-bar">
-        <!-- 音量控制 -->
-        <div class="volume-control">
-          <button class="control-btn" @click="toggleMute">
-            <i class="i-carbon-volume-down" v-if="!isMuted && volume <= 0.5" />
-            <i class="i-carbon-volume-up" v-if="!isMuted && volume > 0.5" />
-            <i class="i-carbon-volume-mute" v-if="isMuted" />
-          </button>
-          <input
-            type="range"
-            class="volume-slider"
-            min="0"
-            max="100"
-            :value="volume * 100"
-            @input="onVolumeChange"
-          />
-        </div>
+    <!-- 错误提示 -->
+    <div v-if="error" class="error-message">
+      {{ error }}
+    </div>
 
-        <!-- 错误提示 -->
-        <div v-if="error" class="error-message">
-          {{ error }}
-        </div>
-      </div>
+    <!-- 控制按钮 -->
+    <div class="controls">
+      <button @click="toggleMute" class="control-btn">
+        {{ muted ? '取消静音' : '静音' }}
+      </button>
+      <button @click="reload" class="control-btn">
+        重新加载
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { FlvPlayerService } from '@/services/flv'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import flvjs from 'flv.js'
 
-interface Props {
+const props = defineProps<{
   url: string
-  type?: string
   isLive?: boolean
-  hasAudio?: boolean
-  hasVideo?: boolean
-}
+  muted?: boolean
+}>()
 
-const props = withDefaults(defineProps<Props>(), {
-  type: 'flv',
-  isLive: true,
-  hasAudio: true,
-  hasVideo: true,
-})
-
-// 播放器状态
-const playerContainerRef = ref<HTMLDivElement | null>(null)
 const videoRef = ref<HTMLVideoElement | null>(null)
-const isControlsVisible = ref(true)
-const volume = ref(1)
-const isMuted = ref(false)
-const error = ref<string | null>(null)
-
-// 播放器服务实例
-const flvPlayer = new FlvPlayerService()
+const flvPlayer = ref<flvjs.Player | null>(null)
+const error = ref('')
+const muted = ref(props.muted ?? true)
 
 // 初始化播放器
-const initPlayer = async () => {
-  try {
-    if (videoRef.value) {
-      flvPlayer.init(videoRef.value, {
-        url: props.url,
-        type: props.type,
-        isLive: props.isLive,
-        hasAudio: props.hasAudio,
-        hasVideo: props.hasVideo,
-      })
+async function initPlayer() {
+  if (!flvjs.isSupported()) {
+    error.value = '您的浏览器不支持FLV播放'
+    return
+  }
 
-      // 初始化音量
-      flvPlayer.setVolume(volume.value)
+  try {
+    if (flvPlayer.value) {
+      flvPlayer.value.destroy()
+      flvPlayer.value = null
     }
+
+    if (!videoRef.value) return
+
+    flvPlayer.value = flvjs.createPlayer({
+      type: 'flv',
+      url: props.url,
+      isLive: props.isLive,
+      hasAudio: true,
+      hasVideo: true
+    }, {
+      enableStashBuffer: false,
+      stashInitialSize: 128,
+      enableWorker: true,
+      lazyLoad: false,
+      autoCleanupSourceBuffer: true
+    })
+
+    flvPlayer.value.attachMediaElement(videoRef.value)
+    flvPlayer.value.load()
+    await flvPlayer.value.play()
+
+    // 错误处理
+    flvPlayer.value.on(flvjs.Events.ERROR, (errorType, errorDetail) => {
+      console.error('FLV播放错误:', errorType, errorDetail)
+      error.value = `播放错误: ${errorDetail}`
+    })
+
+    // 统计信息
+    flvPlayer.value.on(flvjs.Events.STATISTICS_INFO, (stats) => {
+      console.log('播放统计:', stats)
+    })
+
   } catch (err: any) {
-    error.value = err.message
+    error.value = `初始化播放器失败: ${err.message}`
+    console.error('初始化播放器失败:', err)
   }
 }
 
-// 音量控制
-const onVolumeChange = (event: Event) => {
-  const value = Number((event.target as HTMLInputElement).value)
-  volume.value = value / 100
-  flvPlayer.setVolume(volume.value)
+// 重新加载
+async function reload() {
+  error.value = ''
+  await initPlayer()
 }
 
 // 切换静音
-const toggleMute = () => {
-  flvPlayer.toggleMute()
-  isMuted.value = flvPlayer.isMuted()
+function toggleMute() {
+  if (videoRef.value) {
+    muted.value = !muted.value
+    videoRef.value.muted = muted.value
+  }
 }
 
-// 监听组件挂载
-onMounted(() => {
-  initPlayer()
-
-  // 监听鼠标移动显示/隐藏控件
-  let timer: number
-  const showControls = () => {
-    isControlsVisible.value = true
-    clearTimeout(timer)
-    timer = window.setTimeout(() => {
-      isControlsVisible.value = false
-    }, 3000)
-  }
-
-  if (playerContainerRef.value) {
-    playerContainerRef.value.addEventListener('mousemove', showControls)
+// 监听URL变化
+watch(() => props.url, async (newUrl) => {
+  if (newUrl) {
+    await initPlayer()
   }
 })
 
-// 组件卸载时清理资源
+// 组件挂载
+onMounted(async () => {
+  if (props.url) {
+    await initPlayer()
+  }
+})
+
+// 组件卸载
 onUnmounted(() => {
-  flvPlayer.destroy()
+  if (flvPlayer.value) {
+    flvPlayer.value.destroy()
+    flvPlayer.value = null
+  }
 })
 </script>
 
@@ -131,75 +131,50 @@ onUnmounted(() => {
 .flv-player {
   position: relative;
   width: 100%;
-  background-color: #000;
-  aspect-ratio: 16/9;
+  background: #000;
   border-radius: 8px;
   overflow: hidden;
 }
 
 .video-element {
   width: 100%;
-  height: 100%;
+  height: 600px;
   object-fit: contain;
 }
 
-.player-controls {
+.error-message {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 16px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
-  transition: opacity 0.3s;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(220, 53, 69, 0.9);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 4px;
+  text-align: center;
 }
 
-.control-bar {
+.controls {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.volume-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: 12px;
+  z-index: 10;
 }
 
 .control-btn {
-  background: none;
+  padding: 8px 16px;
   border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
   color: white;
   cursor: pointer;
-  padding: 4px;
-  transition: opacity 0.2s;
-  font-size: 1.2em;
+  transition: all 0.3s;
 }
 
 .control-btn:hover {
-  opacity: 0.8;
-}
-
-.volume-slider {
-  width: 80px;
-  height: 4px;
-  -webkit-appearance: none;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-  outline: none;
-}
-
-.volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.error-message {
-  color: #ff4444;
-  font-size: 14px;
-  margin-left: auto;
+  background: rgba(0, 0, 0, 0.8);
 }
 </style>

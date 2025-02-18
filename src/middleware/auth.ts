@@ -13,6 +13,11 @@ export async function authGuard(to: RouteLocationNormalized) {
     return true;
   }
 
+    // 如果没有用户信息，尝试获取
+    if (!authStore.userInfo) {
+      await authStore.fetchUserInfo();
+    }
+
   // 检查是否已登录
   if (!authStore.isLoggedIn) {
     return {
@@ -21,10 +26,7 @@ export async function authGuard(to: RouteLocationNormalized) {
     };
   }
 
-  // 如果没有用户信息，尝试获取
-  if (!authStore.userInfo) {
-    await authStore.fetchUserInfo();
-  }
+
 
   // 检查角色权限
   if (allowedRoles && authStore.userInfo) {

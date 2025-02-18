@@ -1,154 +1,184 @@
 <template>
-  <div class="home-page">
-    <!-- 顶部导航 -->
-    <AppHeader />
+  <div class="live-list">
+    <div class="header">
+      <h1>直播广场</h1>
+      <button v-if="isLoggedIn" class="create-btn" @click="createLiveRoom">
+        开始直播
+      </button>
+    </div>
 
-    <!-- 主要内容区 -->
-    <main class="main-content">
-      <div v-if="isLoading" class="loading">
-        加载中...
-      </div>
-
-      <div v-else-if="error" class="error">
-        {{ error }}
-      </div>
-
-      <!-- 直播列表 -->
-      <div v-else class="streams-grid">
-        <div
-          v-for="stream in activeLiveRooms"
-          :key="stream.id"
-          class="stream-card"
-          @click="navigateToStream(stream.id)"
-        >
-          <!-- 预览图 -->
-          <div class="stream-preview">
-            <img :src="stream.thumbnail || '/placeholder-stream.jpg'" :alt="stream.title">
-            <span class="live-badge">直播中</span>
-            <span class="viewers-badge">
+    <!-- 直播列表 -->
+    <div class="room-grid">
+      <div v-for="room in liveRooms" :key="room._id" class="room-card">
+        {{liveRooms}}
+        <div class="room-thumbnail" @click="enterRoom(room._id)">
+          room
+          <div class="live-badge" v-if="room.status === 'live'">LIVE</div>
+          <img :src="room.thumbnail || '/placeholder.jpg'" alt="直播间封面">
+        </div>
+        <div class="room-info">
+          <h3 class="room-title">{{ room.title }}</h3>
+          <div class="streamer-info">
+            <span class="streamer-name">{{ room.streamerName || '未知主播' }}</span>
+            <span class="viewer-count">
               <i class="i-carbon-user-filled" />
-              {{ formatViewers(stream.viewers) }}
+              {{ formatViewers(room.viewers) }}
             </span>
           </div>
-
-          <!-- 直播信息 -->
-          <div class="stream-info">
-            <h3 class="stream-title">{{ stream.title }}</h3>
-            <p class="streamer-name">{{ stream.streamerName }}</p>
-            <p class="stream-time">
-              <i class="i-carbon-time" />
-              {{ formatDuration(Date.now() - stream.startTime) }}
-            </p>
-          </div>
-        </div>
-
-        <!-- 无直播提示 -->
-        <div v-if="activeLiveRooms.length === 0" class="no-streams">
-          当前没有进行中的直播
-          <router-link to="/stream" class="start-stream-link">
-            开始直播
-          </router-link>
         </div>
       </div>
-    </main>
+    </div>
+
+    <!-- 加载状态 -->
+    <div v-if="loading" class="loading">
+      加载中...
+    </div>
+
+    <!-- 空状态 -->
+    <div v-if="!loading && liveRooms.length === 0" class="empty-state">
+      暂无直播
+    </div>
+
+    <!-- 错误提示 -->
+    <div v-if="error" class="error-message">
+      {{ error }}
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { storeToRefs } from 'pinia'
-import { useLiveStore } from '@/stores/live'
-import AppHeader from '@/components/AppHeader.vue'
+import { useAuthStore } from '@/stores/auth'
+import { api } from '@/services/api'
+import type { LiveRoom } from '@/services/api'
 
 const router = useRouter()
-const liveStore = useLiveStore()
-const { activeLiveRooms, isLoading, error } = storeToRefs(liveStore)
+const authStore = useAuthStore()
+
+// 状态
+const loading = ref(false)
+const error = ref('')
+const liveRooms = ref<LiveRoom[]>([])
+
+// 计算属性
+const isLoggedIn = computed(() => authStore.isLoggedIn)
 
 // 格式化观看人数
-const formatViewers = (num: number) => {
+function formatViewers(num?: number) {
+  if (num === undefined || num === null) return '0'
   if (num >= 10000) {
     return (num / 10000).toFixed(1) + '万'
   }
   return num.toString()
 }
 
-// 格式化直播时长
-const formatDuration = (ms: number) => {
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-
-  if (hours > 0) {
-    return `${hours}小时${minutes % 60}分钟`
-  }
-  if (minutes > 0) {
-    return `${minutes}分钟`
-  }
-  return '刚刚开播'
+// 进入直播间
+function enterRoom(roomId: string) {
+  router.push(`/stream?id=${roomId}`)
 }
 
-// 跳转到直播间
-const navigateToStream = (streamId: string) => {
-  router.push(`/stream?id=${streamId}`)
+// 创建直播间
+function createLiveRoom() {
+  if (!isLoggedIn.value) {
+    router.push('/login')
+    return
+  }
+  router.push('/stream')
 }
 
-// 组件挂载时连接 WebSocket
+// 获取直播列表
+async function fetchLiveRooms() {
+  try {
+    loading.value = true
+    error.value = ''
+
+    const response = await api.rooms.getList()
+    console.log('API响应:', response)
+    
+    if (response.message === '操作成功' && response.data?.success) {
+      liveRooms.value = response.data.data || []
+      console.log('直播间列表:', liveRooms.value)
+    } else {
+      throw new Error(response.message || '获取直播列表失败')
+    }
+  } catch (err: any) {
+    error.value = '获取直播列表失败: ' + err.message
+    console.error('获取直播列表失败:', err)
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(async () => {
-  await liveStore.connect()
+  await fetchLiveRooms()
 })
 </script>
 
 <style scoped>
-.home-page {
-  min-height: 100vh;
-  background-color: #f5f5f5;
-}
-
-.main-content {
+.live-list {
+  padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 80px 20px 20px;
 }
 
-.loading,
-.error,
-.no-streams {
-  text-align: center;
-  padding: 40px;
-  color: #666;
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
 }
 
-.error {
-  color: #dc3545;
+h1 {
+  font-size: 24px;
+  color: #2c3e50;
+  margin: 0;
 }
 
-.streams-grid {
+.create-btn {
+  padding: 8px 16px;
+  background: #42b883;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.create-btn:hover {
+  background: #3aa876;
+}
+
+.room-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  gap: 24px;
 }
 
-.stream-card {
+.room-card {
   background: white;
   border-radius: 8px;
   overflow: hidden;
-  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s;
+}
+
+.room-card:hover {
+  transform: translateY(-4px);
+}
+
+.room-thumbnail {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 */
+  background: #f5f5f5;
   cursor: pointer;
 }
 
-.stream-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.stream-preview {
-  position: relative;
-  aspect-ratio: 16/9;
-  background-color: #000;
-}
-
-.stream-preview img {
+.room-thumbnail img {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -158,80 +188,65 @@ onMounted(async () => {
   position: absolute;
   top: 8px;
   left: 8px;
-  padding: 2px 8px;
-  background-color: #ff4757;
+  padding: 4px 8px;
+  background: #dc3545;
   color: white;
   border-radius: 4px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: bold;
 }
 
-.viewers-badge {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  padding: 2px 8px;
-  background-color: rgba(0, 0, 0, 0.6);
-  color: white;
-  border-radius: 4px;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.stream-info {
+.room-info {
   padding: 12px;
 }
 
-.stream-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: #2c3e50;
+.room-title {
   margin: 0 0 8px;
+  font-size: 16px;
+  color: #2c3e50;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.streamer-name {
+.streamer-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 14px;
-  color: #666;
-  margin: 0 0 4px;
 }
 
-.stream-time {
-  font-size: 12px;
-  color: #999;
-  margin: 0;
+.streamer-name {
+  color: #666;
+}
+
+.viewer-count {
   display: flex;
   align-items: center;
   gap: 4px;
+  color: #666;
 }
 
-.start-stream-link {
-  display: inline-block;
-  margin-top: 12px;
-  padding: 8px 16px;
-  background-color: #42b883;
-  color: white;
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.error-message {
+  text-align: center;
+  padding: 12px;
+  margin: 20px 0;
+  background: #fff3f3;
+  color: #dc3545;
   border-radius: 4px;
-  text-decoration: none;
-  transition: background-color 0.2s;
-}
-
-.start-stream-link:hover {
-  background-color: #3aa876;
-}
-
-@media (max-width: 768px) {
-  .streams-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 16px;
-  }
-
-  .main-content {
-    padding: 70px 16px 16px;
-  }
 }
 </style>
