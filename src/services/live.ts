@@ -7,7 +7,7 @@ export interface LiveRoom {
   startTime?: string
   endTime?: string
   viewerCount: number
-  user_id: string
+  user_id?: string
   stream_key: string
   streamUrls: {
     flv: string

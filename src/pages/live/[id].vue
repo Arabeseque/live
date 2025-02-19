@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useLiveStore } from '../../stores/live'
-import { useUserStore } from '../../stores/user'
+import { useAuthStore } from '../../stores/auth'
 import { useMessage } from 'naive-ui'
 import flvjs from 'flv.js'
 
@@ -20,19 +20,33 @@ async function copyToClipboard(text: string) {
 
 const route = useRoute()
 const liveStore = useLiveStore()
-const userStore = useUserStore()
+const authStore = useAuthStore()
 const videoRef = ref<HTMLVideoElement>()
 const player = ref<flvjs.Player>()
 const error = ref<string>('')
 
 // 判断是否是房主
 const isOwner = computed(() => {
-  return liveStore.currentRoom?.user_id === userStore.user?.id
+  console.log('用户信息:', {
+    userInfo: authStore.userInfo?.id,
+    roomUserId: liveStore.currentRoom?.user_id,
+    token: authStore.getToken()
+  })
+  console.log("currentRoom", liveStore.currentRoom?.user_id)
+  if (!authStore.userInfo || !authStore.getToken() || !liveStore.currentRoom) return false
+  return liveStore.currentRoom.user_id === authStore.userInfo.id
 })
 
 // 初始化FLV播放器
 function initPlayer(url: string) {
+  // 如果已经有播放器实例，先销毁
+  if (player.value) {
+    player.value.destroy()
+    player.value = undefined
+  }
+
   if (flvjs.isSupported()) {
+    console.log('初始化播放器:', url)
     player.value = flvjs.createPlayer({
       type: 'flv',
       url,
@@ -80,11 +94,35 @@ async function handleEndLive() {
   }
 }
 
+// 监听房间状态变化
+watch(
+  () => liveStore.currentRoom?.status,
+  (newStatus) => {
+    console.log('房间状态变化:', newStatus, '是否房主:', isOwner.value)
+    if (!isOwner.value) {
+      if (newStatus === 'living' && liveStore.currentRoom?.streamUrls) {
+        // 房间开播，初始化播放器
+        initPlayer(liveStore.currentRoom.streamUrls.flv)
+      } else if (newStatus === 'ended' || newStatus === 'idle') {
+        // 房间结束，销毁播放器
+        if (player.value) {
+          player.value.destroy()
+          player.value = undefined
+        }
+      }
+    }
+  }
+)
+
 onMounted(async () => {
   try {
+    // 确保获取最新的用户信息
+    await authStore.fetchUserInfo()
+    
     const roomId = route.params.id as string
     await liveStore.fetchRoom(roomId)
-
+    console.log('房间信息:', liveStore.currentRoom, '是否房主:', isOwner.value)
+    
     // 如果是观众且直播已开始，则初始化播放器
     if (liveStore.currentRoom && !isOwner.value && liveStore.currentRoom.status === 'living') {
       initPlayer(liveStore.currentRoom.streamUrls.flv)
