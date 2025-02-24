@@ -16,13 +16,7 @@ const router = createRouter({
       path: '/register',
       component: () => import('../pages/register.vue'),
     },
-    {
-      path: '/stream',
-      component: () => import('../pages/stream.vue'),
-      meta: {
-        requiresAuth: true
-      }
-    },
+
     {
       path: '/live/:id',
       component: () => import('../pages/live/[id].vue'),
