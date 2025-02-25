@@ -81,12 +81,15 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 初始化
   const initialize = async () => {
+    fetchUserInfo()
     // 从localStorage恢复token
-    const savedToken = localStorage.getItem('token');
+    const savedToken = localStorage.getItem('auth_token');
     if (savedToken) {
       token.value = savedToken;
     }
   };
+
+  initialize()
 
   return {
     userInfo,
